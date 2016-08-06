@@ -5,10 +5,10 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"os"
-	"time"
-
 	"net/http"
+	"os"
+	"path"
+	"time"
 
 	"github.com/urfave/cli"
 )
@@ -49,21 +49,36 @@ func main() {
 }
 
 func action(c *cli.Context) error {
-	paths := make([]string, c.NArg())
-	for i := range paths {
-		paths[i] = c.Args().Get(i)
+	dirs := make([]string, c.NArg())
+	for i := range dirs {
+		dirs[i] = c.Args().Get(i)
 	}
-	http.HandleFunc("/", makeHandler(paths))
+	http.HandleFunc("/", makeHandler(dirs))
 	log.Fatal(http.ListenAndServe("localhost:8080", nil))
 	return nil
 }
 
-func makeHandler(paths []string) http.HandlerFunc {
+func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Test: %q\n", r.URL.Path[1:])
-		for _, path := range paths {
-			dir, _ := ioutil.ReadDir(path)
-			fmt.Fprintf(w, "\n%q\n", dir)
+		requestPath := r.URL.Path
+		if requestPath[len(requestPath)-1:] == "/" {
+			requestPath += "index.html"
+		}
+		for _, dir := range dirs {
+			dirDetails, _ := ioutil.ReadDir(dir)
+			file, err := ioutil.ReadFile(path.Join(dir, requestPath))
+
+			if err != nil {
+				log.Println("?")
+				w.Write(file)
+				return
+			}
+
+			fmt.Fprintf(w, "\n%q\n", path.Join(dir, requestPath))
+			fmt.Fprintf(w, "\n%q\n", http.Dir(requestPath))
+			fmt.Fprintf(w, "\n%q\n", file)
+			fmt.Fprintf(w, "\n%q\n", err)
+			fmt.Fprintf(w, "\n%q\n", dirDetails)
 		}
 	}
 }
