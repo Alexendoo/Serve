@@ -1,6 +1,9 @@
 package main
 
 import (
+	"html/template"
+	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -11,10 +14,12 @@ import (
 	"github.com/urfave/cli"
 )
 
-const helpTemplate = `NAME:
-   {{.Name}} - {{.Usage}}
+func main() {
+	cli.AppHelpTemplate = `NAME:
+   Serve - HTTP server for files spanning multiple directories
+
 USAGE:
-   {{if .UsageText}}{{.UsageText}}{{else}}{{.HelpName}} {{if .VisibleFlags}}[global options]{{end}}{{if .Commands}} command [command options]{{end}} {{if .ArgsUsage}}{{.ArgsUsage}}{{else}}[arguments...]{{end}}{{end}}
+   {{.HelpName}} [OPTION]... [DIR]...
    {{if .Version}}{{if not .HideVersion}}
 VERSION:
    {{.Version}}
@@ -22,19 +27,14 @@ VERSION:
 AUTHOR(S):
    {{range .Authors}}{{.}}{{end}}
    {{end}}{{if .VisibleFlags}}
-GLOBAL OPTIONS:
+OPTIONS:
    {{range .VisibleFlags}}{{.}}
    {{end}}{{end}}{{if .Copyright}}
 COPYRIGHT:
    {{.Copyright}}
    {{end}}
 `
-
-func main() {
-	cli.AppHelpTemplate = helpTemplate
 	app := cli.NewApp()
-	app.Name = "Serve"
-	app.Usage = "HTTP server for files spanning multiple directories"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "host",
@@ -101,14 +101,33 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	return true
 }
 
+// TODO:
+// - trailing slash on dir
+// - file modes/sizes?
+// - insert ..
+// - append dimmed requestPath to dir
+
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
 		return false
 	}
 
 	requestPath := r.URL.Path
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.WriteString(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>indexes</title></head><body><pre>`)
+	linkTmpl := template.Must(template.New("link").Parse("<a href=\"{{.}}\">{{.}}</a>\n"))
+	headerTmpl := template.Must(template.New("header").Parse("<h2>{{.}}</h2>"))
 	for _, dir := range dirs {
-		log.Printf("%s in %s", requestPath, dir)
+		dirPath := path.Join(dir, requestPath)
+		contents, err := ioutil.ReadDir(dirPath)
+		if err != nil {
+			continue
+		}
+		headerTmpl.Execute(w, dir)
+		for _, fileInfo := range contents {
+			linkTmpl.Execute(w, fileInfo.Name())
+		}
 	}
+	io.WriteString(w, `</pre></body></html>`)
 	return false
 }
