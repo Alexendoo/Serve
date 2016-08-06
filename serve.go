@@ -1,13 +1,13 @@
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
+	"errors"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/urfave/cli"
@@ -60,26 +60,38 @@ func action(c *cli.Context) error {
 
 func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		requestPath := r.URL.Path
-		if requestPath[len(requestPath)-1:] == "/" {
-			requestPath += "index.html"
+		err := tryFiles(w, r, dirs)
+		if err == nil {
+			return
 		}
-		for _, dir := range dirs {
-			dirDetails, _ := ioutil.ReadDir(dir)
-			file, err := ioutil.ReadFile(path.Join(dir, requestPath))
+		log.Println("hello")
+		tryDirs(w, r, dirs)
+	}
+}
 
-			if err != nil {
-				log.Println("?")
-				w.Write(file)
-				return
-			}
+func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) error {
+	requestPath := r.URL.Path
+	for _, dir := range dirs {
+		tryFile := path.Join(dir, requestPath)
+		stat, statErr := os.Stat(tryFile)
+		file, fileErr := os.Open(tryFile)
 
-			fmt.Fprintf(w, "\n%q\n", path.Join(dir, requestPath))
-			fmt.Fprintf(w, "\n%q\n", http.Dir(requestPath))
-			fmt.Fprintf(w, "\n%q\n", file)
-			fmt.Fprintf(w, "\n%q\n", err)
-			fmt.Fprintf(w, "\n%q\n", dirDetails)
+		opened := statErr == nil && fileErr == nil
+
+		if opened && !stat.IsDir() {
+			http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
+			return nil
 		}
+	}
+	return errors.New("no files found")
+}
+
+func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) {
+	requestPath := r.URL.Path
+	htmlReqeust := strings.Contains(r.Header.Get("Accept"), "text/html")
+	log.Println(requestPath, htmlReqeust)
+	for _, dir := range dirs {
+		log.Printf("%s in %s", requestPath, dir)
 	}
 }
 
