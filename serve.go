@@ -2,12 +2,11 @@ package main
 
 import (
 	"log"
-	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/urfave/cli"
 )
@@ -32,15 +31,20 @@ COPYRIGHT:
 `
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 	cli.AppHelpTemplate = helpTemplate
 	app := cli.NewApp()
 	app.Name = "Serve"
 	app.Usage = "HTTP server for files spanning multiple directories"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
+			Name:  "host",
+			Usage: "bind to `address`",
+			Value: "localhost",
+		},
+		cli.StringFlag{
 			Name:  "port, p",
-			Usage: "`port` to bind server to (default: random)",
+			Usage: "bind to `port`",
+			Value: "8080",
 		},
 	}
 	app.Action = action
@@ -56,7 +60,8 @@ func action(c *cli.Context) error {
 		dirs = []string{"."}
 	}
 	http.HandleFunc("/", makeHandler(dirs))
-	log.Fatal(http.ListenAndServe("localhost:8080", nil))
+	address := net.JoinHostPort(c.String("host"), c.String("port"))
+	log.Fatal(http.ListenAndServe(address, nil))
 	return nil
 }
 
@@ -65,7 +70,6 @@ func makeHandler(dirs []string) http.HandlerFunc {
 		if tryFiles(w, r, dirs) {
 			return
 		}
-		log.Println("hello")
 		tryDirs(w, r, dirs)
 	}
 }
@@ -74,11 +78,8 @@ func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	requestPath := r.URL.Path
 	for _, dir := range dirs {
 		filePath := path.Join(dir, requestPath)
-		if tryFile(w, r, filePath) {
-			return true
-		}
-		filePath = path.Join(filePath, "index.html")
-		if tryFile(w, r, filePath) {
+		indexPath := path.Join(filePath, "index.html")
+		if tryFile(w, r, filePath) || tryFile(w, r, indexPath) {
 			return true
 		}
 	}
@@ -98,15 +99,14 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	return false
 }
 
-func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) {
+func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		return false
+	}
+
 	requestPath := r.URL.Path
-	htmlReqeust := strings.Contains(r.Header.Get("Accept"), "text/html")
-	log.Println(requestPath, htmlReqeust)
 	for _, dir := range dirs {
 		log.Printf("%s in %s", requestPath, dir)
 	}
-}
-
-func ephemeralPort() int {
-	return rand.Int()%16384 + 49152
+	return false
 }
