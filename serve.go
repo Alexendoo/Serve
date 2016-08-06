@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"log"
 	"math/rand"
 	"net/http"
@@ -60,8 +59,7 @@ func action(c *cli.Context) error {
 
 func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := tryFiles(w, r, dirs)
-		if err == nil {
+		if tryFiles(w, r, dirs) {
 			return
 		}
 		log.Println("hello")
@@ -69,21 +67,32 @@ func makeHandler(dirs []string) http.HandlerFunc {
 	}
 }
 
-func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) error {
+func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	requestPath := r.URL.Path
 	for _, dir := range dirs {
-		tryFile := path.Join(dir, requestPath)
-		stat, statErr := os.Stat(tryFile)
-		file, fileErr := os.Open(tryFile)
-
-		opened := statErr == nil && fileErr == nil
-
-		if opened && !stat.IsDir() {
-			http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
-			return nil
+		filePath := path.Join(dir, requestPath)
+		if tryFile(w, r, filePath) {
+			return true
+		}
+		filePath = path.Join(filePath, "index.html")
+		if tryFile(w, r, filePath) {
+			return true
 		}
 	}
-	return errors.New("no files found")
+	return false
+}
+
+func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
+	stat, statErr := os.Stat(filePath)
+	file, fileErr := os.Open(filePath)
+
+	opened := statErr == nil && fileErr == nil
+
+	if opened && !stat.IsDir() {
+		http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
+		return true
+	}
+	return false
 }
 
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) {
