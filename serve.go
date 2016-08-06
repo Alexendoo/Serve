@@ -52,6 +52,9 @@ func action(c *cli.Context) error {
 	for i := range dirs {
 		dirs[i] = c.Args().Get(i)
 	}
+	if len(dirs) == 0 {
+		dirs = []string{"."}
+	}
 	http.HandleFunc("/", makeHandler(dirs))
 	log.Fatal(http.ListenAndServe("localhost:8080", nil))
 	return nil
