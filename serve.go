@@ -88,15 +88,17 @@ func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 
 func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	stat, statErr := os.Stat(filePath)
-	file, fileErr := os.Open(filePath)
-
-	opened := statErr == nil && fileErr == nil
-
-	if opened && !stat.IsDir() {
-		http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
-		return true
+	if statErr != nil || stat.IsDir() {
+		return false
 	}
-	return false
+
+	file, fileErr := os.Open(filePath)
+	if fileErr != nil {
+		return false
+	}
+
+	http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
+	return true
 }
 
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
