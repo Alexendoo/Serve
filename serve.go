@@ -18,7 +18,7 @@ var (
 	host       string
 	port       string
 	index      string
-	noDirs     bool
+	noList     bool
 	version    = "HEAD"
 	linkTmpl   = template.Must(template.New("link").Parse("<a href=\"{{.}}\">{{.}}</a>\n"))
 	headerTmpl = template.Must(template.New("header").Parse("<h2>{{.}}</h2>"))
@@ -36,10 +36,10 @@ VERSION:
    %s
 
 OPTIONS:
-   -p, --port         --  bind to port (default: 8080)
-       --host         --  bind to host (default: localhost)
-   -i, --index        --  serve all paths to index if file not found
-	     --no-listings  --  disable file listings
+   -p, --port     --  bind to port (default: 8080)
+       --host     --  bind to host (default: localhost)
+   -i, --index    --  serve all paths to index if file not found
+       --no-list  --  disable file listings
 `
 )
 
@@ -59,7 +59,7 @@ func getFlags() *flag.FlagSet {
 	flags.StringVar(&host, "host", "localhost", "")
 	flags.StringVar(&index, "i", "", "")
 	flags.StringVar(&index, "index", "", "")
-	flags.BoolVar(&noDirs, "no-listings", false, "")
+	flags.BoolVar(&noList, "no-list", false, "")
 	err := flags.Parse(os.Args[1:])
 	if err == flag.ErrHelp {
 		os.Exit(0)
@@ -67,6 +67,7 @@ func getFlags() *flag.FlagSet {
 	if err != nil {
 		os.Exit(1)
 	}
+	log.Printf("%q - %q - %q", port, host, index)
 	return flags
 }
 
@@ -87,6 +88,10 @@ func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		server := fmt.Sprintf("serve/%s", version)
 		w.Header().Set("Server", server)
+		if !validRequest(r) {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
 		if tryFiles(w, r, dirs) {
 			return
 		}
@@ -96,17 +101,30 @@ func makeHandler(dirs []string) http.HandlerFunc {
 		if len(index) > 0 && staticIndex(w, r) {
 			return
 		}
-		if !noDirs && tryDirs(w, r, dirs) {
+		if !noList && tryDirs(w, r, dirs) {
 			return
 		}
 		http.NotFound(w, r)
 	}
 }
 
+func validRequest(r *http.Request) bool {
+	if !strings.Contains(r.URL.Path, "..") {
+		return true
+	}
+	for _, field := range strings.FieldsFunc(r.URL.Path, isSlashRune) {
+		if field == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func isSlashRune(r rune) bool { return r == '/' || r == '\\' }
+
 func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) bool {
-	requestPath := r.URL.Path
 	for _, dir := range dirs {
-		filePath := filepath.Join(dir, requestPath)
+		filePath := filepath.Join(dir, r.URL.Path)
 		indexPath := filepath.Join(filePath, "index.html")
 		if tryFile(w, r, filePath) || tryFile(w, r, indexPath) {
 			return true
@@ -148,12 +166,10 @@ func staticIndex(w http.ResponseWriter, r *http.Request) bool {
 // - append dimmed requestPath to dir
 
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
-
-	requestPath := r.URL.Path
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.WriteString(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>indexes</title></head><body><pre>`)
 	for _, dir := range dirs {
-		dirPath := filepath.Join(dir, requestPath)
+		dirPath := filepath.Join(dir, r.URL.Path)
 		contents, err := ioutil.ReadDir(dirPath)
 		if err != nil {
 			continue
@@ -164,5 +180,5 @@ func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 		}
 	}
 	io.WriteString(w, `</pre></body></html>`)
-	return false
+	return true
 }
