@@ -18,6 +18,7 @@ var (
 	port     string
 	index    string
 	noList   bool
+	verbose  bool
 	version  = "HEAD"
 	htmlTmpl = template.Must(template.New("html").Parse(html))
 )
@@ -71,6 +72,7 @@ OPTIONS:
        --host     --  bind to host (default: localhost)
    -i, --index    --  serve all paths to index if file not found
        --no-list  --  disable file listings
+   -v, --verbose  --  display extra information
 `
 )
 
@@ -88,9 +90,11 @@ func getFlags() *flag.FlagSet {
 	flags.StringVar(&port, "port", "8080", "")
 	flags.StringVar(&port, "p", "8080", "")
 	flags.StringVar(&host, "host", "localhost", "")
-	flags.StringVar(&index, "i", "", "")
 	flags.StringVar(&index, "index", "", "")
+	flags.StringVar(&index, "i", "", "")
 	flags.BoolVar(&noList, "no-list", false, "")
+	flags.BoolVar(&verbose, "verbose", false, "")
+	flags.BoolVar(&verbose, "v", false, "")
 	err := flags.Parse(os.Args[1:])
 	if err == flag.ErrHelp {
 		os.Exit(0)
@@ -111,7 +115,7 @@ func serve(flags *flag.FlagSet) {
 	}
 	http.HandleFunc("/", makeHandler(dirs))
 	address := net.JoinHostPort(host, port)
-	log.Printf("Serving from: http://%s\n", address)
+	log.Printf("starting on: http://%s\n", address)
 	log.Fatal(http.ListenAndServe(address, nil))
 }
 
@@ -119,8 +123,12 @@ func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		server := fmt.Sprintf("serve/%s", version)
 		w.Header().Set("Server", server)
+		if verbose {
+			log.Printf("%s → %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Method)
+		}
 		if !validRequest(r) {
 			http.Error(w, "invalid path", http.StatusBadRequest)
+			log.Printf("invalid path: %s", r.URL.Path)
 			return
 		}
 		if tryFiles(w, r, dirs) {
@@ -169,12 +177,13 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	if statErr != nil || stat.IsDir() {
 		return false
 	}
-
 	file, fileErr := os.Open(filePath)
 	if fileErr != nil {
 		return false
 	}
-
+	if verbose {
+		log.Printf("%s ← %s", r.RemoteAddr, filePath)
+	}
 	http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
 	return true
 }
