@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"html/template"
 	"io"
 	"io/ioutil"
@@ -8,61 +10,70 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
+)
 
-	"github.com/urfave/cli"
+var (
+	host       string
+	port       string
+	version    = "HEAD"
+	linkTmpl   = template.Must(template.New("link").Parse("<a href=\"{{.}}\">{{.}}</a>\n"))
+	headerTmpl = template.Must(template.New("header").Parse("<h2>{{.}}</h2>"))
+)
+
+const (
+	usage = `
+NAME:
+   Serve - HTTP server for files spanning multiple directories https://git.io/serve
+
+USAGE:
+   %s [OPTION]... [DIR]...
+
+VERSION:
+   %s
+
+OPTIONS:
+   {{range .VisibleFlags}}{{.}}
+   {{end}}
+`
 )
 
 func main() {
-	cli.AppHelpTemplate = `NAME:
-   Serve - HTTP server for files spanning multiple directories
-
-USAGE:
-   {{.HelpName}} [OPTION]... [DIR]...
-   {{if .Version}}{{if not .HideVersion}}
-VERSION:
-   {{.Version}}
-   {{end}}{{end}}{{if len .Authors}}
-AUTHOR(S):
-   {{range .Authors}}{{.}}{{end}}
-   {{end}}{{if .VisibleFlags}}
-OPTIONS:
-   {{range .VisibleFlags}}{{.}}
-   {{end}}{{end}}{{if .Copyright}}
-COPYRIGHT:
-   {{.Copyright}}
-   {{end}}
-`
-	app := cli.NewApp()
-	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:  "host",
-			Usage: "bind to `address`",
-			Value: "localhost",
-		},
-		cli.StringFlag{
-			Name:  "port, p",
-			Usage: "bind to `port`",
-			Value: "8080",
-		},
-	}
-	app.Action = action
-	app.Run(os.Args)
+	flags := getFlags()
+	serve(flags)
 }
 
-func action(c *cli.Context) error {
-	dirs := make([]string, c.NArg())
+func getFlags() *flag.FlagSet {
+	flags := flag.NewFlagSet("flags", flag.ContinueOnError)
+	flags.Usage = func() {
+		usageName := filepath.Base(os.Args[0])
+		fmt.Printf(usage, usageName, version)
+	}
+	flags.StringVar(&port, "port", "8080", "")
+	flags.StringVar(&port, "p", "8080", "")
+	flags.StringVar(&host, "host", "localhost", "")
+	err := flags.Parse(os.Args[1:])
+	if err == flag.ErrHelp {
+		os.Exit(0)
+	}
+	if err != nil {
+		os.Exit(1)
+	}
+	return flags
+}
+
+func serve(flags *flag.FlagSet) {
+	dirs := make([]string, flags.NArg())
 	for i := range dirs {
-		dirs[i] = c.Args().Get(i)
+		dirs[i] = flags.Arg(i)
 	}
 	if len(dirs) == 0 {
 		dirs = []string{"."}
 	}
 	http.HandleFunc("/", makeHandler(dirs))
-	address := net.JoinHostPort(c.String("host"), c.String("port"))
+	address := net.JoinHostPort(host, port)
 	log.Fatal(http.ListenAndServe(address, nil))
-	return nil
 }
 
 func makeHandler(dirs []string) http.HandlerFunc {
@@ -77,8 +88,8 @@ func makeHandler(dirs []string) http.HandlerFunc {
 func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	requestPath := r.URL.Path
 	for _, dir := range dirs {
-		filePath := path.Join(dir, requestPath)
-		indexPath := path.Join(filePath, "index.html")
+		filePath := filepath.Join(dir, requestPath)
+		indexPath := filepath.Join(filePath, "index.html")
 		if tryFile(w, r, filePath) || tryFile(w, r, indexPath) {
 			return true
 		}
@@ -115,10 +126,8 @@ func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	requestPath := r.URL.Path
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.WriteString(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>indexes</title></head><body><pre>`)
-	linkTmpl := template.Must(template.New("link").Parse("<a href=\"{{.}}\">{{.}}</a>\n"))
-	headerTmpl := template.Must(template.New("header").Parse("<h2>{{.}}</h2>"))
 	for _, dir := range dirs {
-		dirPath := path.Join(dir, requestPath)
+		dirPath := filepath.Join(dir, requestPath)
 		contents, err := ioutil.ReadDir(dirPath)
 		if err != nil {
 			continue
