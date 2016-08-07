@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,19 +14,52 @@ import (
 )
 
 var (
-	host       string
-	port       string
-	index      string
-	noList     bool
-	version    = "HEAD"
-	linkTmpl   = template.Must(template.New("link").Parse("<a href=\"{{.}}\">{{.}}</a>\n"))
-	headerTmpl = template.Must(template.New("header").Parse("<h2>{{.}}</h2>"))
+	host     string
+	port     string
+	index    string
+	noList   bool
+	version  = "HEAD"
+	htmlTmpl = template.Must(template.New("html").Parse(html))
 )
 
 const (
+	html = `<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>indexes</title>
+	<style>
+		body {
+			font-size: 14px;
+			font-family: consolas,Liberation Mono,DejaVu Sans Mono,Menlo,monospace;
+		}
+		a {
+			display: block;
+			color: blue;
+			text-decoration: none;
+		}
+		a:hover {
+			background-color: #f3f3f3;
+		}
+		.req-path {
+			color: #bbb;
+		}
+	</style>
+</head>
+<body>
+	{{range .}}
+		<h3>
+			<span class=local-path>{{.LocalPath}}</span><span class=req-path>{{.RequestPath}}</span>
+		</h3>
+		{{range .Entries}}
+			<a {{if .IsDir}}class=dir {{end}}href={{.Name}}>{{.Name}}{{if .IsDir}}/{{end}}</a>
+		{{end}}
+	{{end}}
+</body>
+`
 	usage = `
 NAME:
-   Serve - HTTP server for files spanning multiple directories https://git.io/serve
+   Serve - HTTP server for files spanning multiple directories
 
 USAGE:
    %s [OPTION]... [DIR]...
@@ -67,7 +99,6 @@ func getFlags() *flag.FlagSet {
 	if err != nil {
 		os.Exit(1)
 	}
-	log.Printf("%q - %q - %q", port, host, index)
 	return flags
 }
 
@@ -81,6 +112,7 @@ func serve(flags *flag.FlagSet) {
 	}
 	http.HandleFunc("/", makeHandler(dirs))
 	address := net.JoinHostPort(host, port)
+	log.Printf("Serving from: http://%s\n", address)
 	log.Fatal(http.ListenAndServe(address, nil))
 }
 
@@ -160,25 +192,30 @@ func staticIndex(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // TODO:
-// - trailing slash on dir
 // - file modes/sizes?
 // - insert ..
-// - append dimmed requestPath to dir
+
+type dirList struct {
+	LocalPath   string
+	RequestPath string
+	Entries     []os.FileInfo
+}
 
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>indexes</title></head><body><pre>`)
+	dirLists := []dirList{}
 	for _, dir := range dirs {
 		dirPath := filepath.Join(dir, r.URL.Path)
 		contents, err := ioutil.ReadDir(dirPath)
 		if err != nil {
 			continue
 		}
-		headerTmpl.Execute(w, dir)
-		for _, fileInfo := range contents {
-			linkTmpl.Execute(w, fileInfo.Name())
-		}
+		dirLists = append(dirLists, dirList{
+			LocalPath:   dir,
+			RequestPath: r.URL.Path,
+			Entries:     contents,
+		})
 	}
-	io.WriteString(w, `</pre></body></html>`)
+	htmlTmpl.Execute(w, dirLists)
 	return true
 }
