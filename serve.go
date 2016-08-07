@@ -17,6 +17,8 @@ import (
 var (
 	host       string
 	port       string
+	index      string
+	noDirs     bool
 	version    = "HEAD"
 	linkTmpl   = template.Must(template.New("link").Parse("<a href=\"{{.}}\">{{.}}</a>\n"))
 	headerTmpl = template.Must(template.New("header").Parse("<h2>{{.}}</h2>"))
@@ -34,8 +36,10 @@ VERSION:
    %s
 
 OPTIONS:
-   {{range .VisibleFlags}}{{.}}
-   {{end}}
+   -p, --port         --  bind to port (default: 8080)
+       --host         --  bind to host (default: localhost)
+   -i, --index        --  serve all paths to index if file not found
+	     --no-listings  --  disable file listings
 `
 )
 
@@ -53,6 +57,9 @@ func getFlags() *flag.FlagSet {
 	flags.StringVar(&port, "port", "8080", "")
 	flags.StringVar(&port, "p", "8080", "")
 	flags.StringVar(&host, "host", "localhost", "")
+	flags.StringVar(&index, "i", "", "")
+	flags.StringVar(&index, "index", "", "")
+	flags.BoolVar(&noDirs, "no-listings", false, "")
 	err := flags.Parse(os.Args[1:])
 	if err == flag.ErrHelp {
 		os.Exit(0)
@@ -78,10 +85,21 @@ func serve(flags *flag.FlagSet) {
 
 func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		server := fmt.Sprintf("serve/%s", version)
+		w.Header().Set("Server", server)
 		if tryFiles(w, r, dirs) {
 			return
 		}
-		tryDirs(w, r, dirs)
+		if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+			return
+		}
+		if len(index) > 0 && staticIndex(w, r) {
+			return
+		}
+		if !noDirs && tryDirs(w, r, dirs) {
+			return
+		}
+		http.NotFound(w, r)
 	}
 }
 
@@ -112,6 +130,17 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	return true
 }
 
+func staticIndex(w http.ResponseWriter, r *http.Request) bool {
+	file, fileErr := os.Open(index)
+	stat, statErr := os.Stat(index)
+	if fileErr != nil || statErr != nil {
+		log.Println(fileErr)
+		return false
+	}
+	http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
+	return true
+}
+
 // TODO:
 // - trailing slash on dir
 // - file modes/sizes?
@@ -119,9 +148,6 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 // - append dimmed requestPath to dir
 
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
-	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
-		return false
-	}
 
 	requestPath := r.URL.Path
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
