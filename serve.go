@@ -27,11 +27,10 @@ const (
 <html>
 <head>
 	<meta charset="UTF-8">
-	<title>indexes</title>
 	<style>
 		body {
 			font-size: 14px;
-			font-family: consolas,Liberation Mono,DejaVu Sans Mono,Menlo,monospace;
+			font-family: consolas, "Liberation Mono", "DejaVu Sans Mono", Menlo, monospace;
 		}
 		a {
 			display: block;
@@ -52,7 +51,7 @@ const (
 			<span class=local-path>{{.LocalPath}}</span><span class=req-path>{{.RequestPath}}</span>
 		</h3>
 		{{range .Entries}}
-			<a {{if .IsDir}}class=dir {{end}}href={{.Name}}>{{.Name}}{{if .IsDir}}/{{end}}</a>
+			<a class="entry{{if .IsDir}} dir{{end}}" href={{.Name}}>{{.Name}}{{if .IsDir}}/{{end}}</a>
 		{{end}}
 	{{end}}
 </body>
@@ -191,31 +190,48 @@ func staticIndex(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// TODO:
-// - file modes/sizes?
-// - insert ..
-
 type dirList struct {
 	LocalPath   string
 	RequestPath string
-	Entries     []os.FileInfo
+	Entries     []entry
+}
+
+type entry struct {
+	Name  string
+	IsDir bool
 }
 
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	dirLists := []dirList{}
+	found := false
 	for _, dir := range dirs {
 		dirPath := filepath.Join(dir, r.URL.Path)
-		contents, err := ioutil.ReadDir(dirPath)
+		dirInfo, err := ioutil.ReadDir(dirPath)
 		if err != nil {
 			continue
+		}
+		entries := []entry{
+			{
+				Name:  "..",
+				IsDir: true,
+			},
+		}
+		for _, file := range dirInfo {
+			entries = append(entries, entry{
+				Name:  file.Name(),
+				IsDir: file.IsDir(),
+			})
 		}
 		dirLists = append(dirLists, dirList{
 			LocalPath:   dir,
 			RequestPath: r.URL.Path,
-			Entries:     contents,
+			Entries:     entries,
 		})
+		found = true
 	}
-	htmlTmpl.Execute(w, dirLists)
-	return true
+	if found {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		htmlTmpl.Execute(w, dirLists)
+	}
+	return found
 }
