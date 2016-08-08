@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -49,10 +50,10 @@ const (
 <body>
 	{{range .}}
 		<h3>
-			<span class=local-path>{{.LocalPath}}</span><span class=req-path>{{.RequestPath}}</span>
+			<span class="local-path">{{.LocalPath}}</span><span class="req-path">{{.RequestPath}}</span>
 		</h3>
 		{{range .Entries}}
-			<a class="entry{{if .IsDir}} dir{{end}}" href={{.Name}}>{{.Name}}{{if .IsDir}}/{{end}}</a>
+			<a class="entry{{if .IsDir}} dir{{end}}" href="{{.Link}}">{{.Name}}{{if .IsDir}}/{{end}}</a>
 		{{end}}
 	{{end}}
 </body>
@@ -75,6 +76,10 @@ OPTIONS:
    -v, --verbose  --  display extra information
 `
 )
+
+// TODO:
+// - Handle interrupts
+// - -vv
 
 func main() {
 	flags := getFlags()
@@ -121,20 +126,15 @@ func serve(flags *flag.FlagSet) {
 
 func makeHandler(dirs []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		logRequest(r)
 		server := fmt.Sprintf("serve/%s", version)
 		w.Header().Set("Server", server)
-		if verbose {
-			log.Printf("%s → %s %s %s", r.RemoteAddr, r.Method, r.URL.Path, r.Method)
-		}
 		if !validRequest(r) {
 			http.Error(w, "invalid path", http.StatusBadRequest)
 			log.Printf("invalid path: %s", r.URL.Path)
 			return
 		}
 		if tryFiles(w, r, dirs) {
-			return
-		}
-		if !strings.Contains(r.Header.Get("Accept"), "text/html") {
 			return
 		}
 		if len(index) > 0 && staticIndex(w, r) {
@@ -144,6 +144,19 @@ func makeHandler(dirs []string) http.HandlerFunc {
 			return
 		}
 		http.NotFound(w, r)
+	}
+}
+
+func logRequest(r *http.Request) {
+	if !verbose {
+		return
+	}
+	log.Printf("< %s %s %s", r.Method, r.RequestURI, r.Proto)
+	log.Printf("< Host: %s", r.RemoteAddr)
+	for key, header := range r.Header {
+		for _, value := range header {
+			log.Printf("< %s: %s", key, value)
+		}
 	}
 }
 
@@ -182,7 +195,8 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 		return false
 	}
 	if verbose {
-		log.Printf("%s ← %s", r.RemoteAddr, filePath)
+		filename, _ := filepath.Abs(filePath)
+		log.Printf("> %s", filename)
 	}
 	http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
 	return true
@@ -207,6 +221,7 @@ type dirList struct {
 
 type entry struct {
 	Name  string
+	Link  string
 	IsDir bool
 }
 
@@ -222,12 +237,14 @@ func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 		entries := []entry{
 			{
 				Name:  "..",
+				Link:  path.Join(r.URL.Path, ".."),
 				IsDir: true,
 			},
 		}
 		for _, file := range dirInfo {
 			entries = append(entries, entry{
 				Name:  file.Name(),
+				Link:  path.Join(r.URL.Path, file.Name()),
 				IsDir: file.IsDir(),
 			})
 		}
