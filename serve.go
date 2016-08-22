@@ -73,19 +73,16 @@ OPTIONS:
        --host     --  bind to host (default: localhost)
    -i, --index    --  serve all paths to index if file not found
        --no-list  --  disable file listings
-   -v, --verbose  --  display extra information
+   -v, --verbose  --  display requests and responses
 `
 )
-
-// TODO:
-// - Handle interrupts
-// - -vv
 
 func main() {
 	flags := getFlags()
 	serve(flags)
 }
 
+// getFlags returns the command line flags passed to the serve binary
 func getFlags() *flag.FlagSet {
 	flags := flag.NewFlagSet("flags", flag.ContinueOnError)
 	flags.Usage = func() {
@@ -116,6 +113,7 @@ func serve(flags *flag.FlagSet) {
 		dirs[i] = flags.Arg(i)
 	}
 	if len(dirs) == 0 {
+		// serve from the current directory
 		dirs = []string{"."}
 	}
 	http.HandleFunc("/", makeHandler(dirs))
@@ -160,6 +158,7 @@ func logRequest(r *http.Request) {
 	}
 }
 
+// validRequest returns false if the request is invalid: Contains ".."
 func validRequest(r *http.Request) bool {
 	if !strings.Contains(r.URL.Path, "..") {
 		return true
@@ -185,6 +184,7 @@ func tryFiles(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	return false
 }
 
+// tryFile attempts to serve a file at filePath to the provided ResponseWriter
 func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	stat, statErr := os.Stat(filePath)
 	if statErr != nil || stat.IsDir() {
@@ -202,6 +202,7 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	return true
 }
 
+// staticIndex will attempt to serve the globally defined index file
 func staticIndex(w http.ResponseWriter, r *http.Request) bool {
 	file, fileErr := os.Open(index)
 	stat, statErr := os.Stat(index)
@@ -225,6 +226,17 @@ type entry struct {
 	IsDir bool
 }
 
+// tryDirs will generate directory listings for any available directories,
+// providing multiple in the case that there are several matching directories
+//
+// Example: `serve dir1 dir2` would list directory entries dir1 containing file1,
+// and dir2 containing file2 and file3
+// .
+// ├── dir1
+// │   └── file1
+// └── dir2
+//     ├── file2
+//     └── file3
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	dirLists := []dirList{}
 	found := false
