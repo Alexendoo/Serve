@@ -9,9 +9,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 var (
@@ -78,6 +80,14 @@ OPTIONS:
 )
 
 func main() {
+	// handle interrupts (0 exit on ctrl + c)
+	c := make(chan os.Signal, 2)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-c
+		os.Exit(0)
+	}()
+
 	flags := getFlags()
 	serve(flags)
 }
