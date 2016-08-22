@@ -88,6 +88,9 @@ func main() {
 		os.Exit(0)
 	}()
 
+	// Log just the timestamp + message
+	log.SetFlags(log.Ltime)
+
 	flags := getFlags()
 	serve(flags)
 }
@@ -128,7 +131,7 @@ func serve(flags *flag.FlagSet) {
 	}
 	http.HandleFunc("/", makeHandler(dirs))
 	address := net.JoinHostPort(host, port)
-	log.Printf("starting on: http://%s\n", address)
+	log.Printf("starting on: http://%s", address)
 	log.Fatal(http.ListenAndServe(address, nil))
 }
 
@@ -159,13 +162,7 @@ func logRequest(r *http.Request) {
 	if !verbose {
 		return
 	}
-	log.Printf("< %s %s %s", r.Method, r.RequestURI, r.Proto)
-	log.Printf("< Host: %s", r.RemoteAddr)
-	for key, header := range r.Header {
-		for _, value := range header {
-			log.Printf("< %s: %s", key, value)
-		}
-	}
+	log.Printf("%s → %s %s %s", r.RemoteAddr, r.Method, r.RequestURI, r.Proto)
 }
 
 // validRequest returns false if the request is invalid: Contains ".."
@@ -206,7 +203,7 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 	}
 	if verbose {
 		filename, _ := filepath.Abs(filePath)
-		log.Printf("> %s", filename)
+		log.Printf("%s ← %s", r.RemoteAddr, filename)
 	}
 	http.ServeContent(w, r, stat.Name(), stat.ModTime(), file)
 	return true
