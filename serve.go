@@ -276,7 +276,19 @@ func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	}
 	if found {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		logDirLists(r, dirLists)
 		htmlTmpl.Execute(w, dirLists)
 	}
 	return found
+}
+
+func logDirLists(r *http.Request, dirLists []dirList) {
+	if !verbose {
+		return
+	}
+	output := ""
+	for _, dir := range dirLists {
+		output += dir.LocalPath + "/, "
+	}
+	log.Printf("%s ← %s", r.RemoteAddr, output[:len(output)-2])
 }
