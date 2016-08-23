@@ -71,10 +71,10 @@ VERSION:
    %s
 
 OPTIONS:
-   -p, --port     --  bind to port (default: 8080)
        --host     --  bind to host (default: localhost)
    -i, --index    --  serve all paths to index if file not found
-       --no-list  --  disable file listings
+       --no-list  --  disable directory listings
+   -p, --port     --  bind to port (default: 8080)
    -v, --verbose  --  display requests and responses
 `
 )
