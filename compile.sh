@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 cd "$(dirname "$(readlink -f "$0")")"
-version="$(git describe)"
+version="$(git describe --tags)"
 
 while read GOOS GOARCH; do
   export GOOS GOARCH

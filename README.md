@@ -7,6 +7,8 @@ simulataniously
 go get github.com/Alexendoo/Serve
 ```
 
+[Or download a binary](https://github.com/Alexendoo/serve/releases)
+
 ## Usage
 
 ```
@@ -38,7 +40,7 @@ Utilise npm packages without having to type `../node_modules`
 serve client node_modules
 ```
 
-```
+```ANTLR
 client/
   index.html
 node_modules/
@@ -58,4 +60,3 @@ Use a specified file for any non matching requests, for instance for HTML5 routi
 ```
 serve -i index.html
 ```
-
