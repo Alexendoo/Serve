@@ -198,6 +198,7 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 		return false
 	}
 	file, fileErr := os.Open(filePath)
+	defer file.Close()
 	if fileErr != nil {
 		return false
 	}
@@ -212,6 +213,7 @@ func tryFile(w http.ResponseWriter, r *http.Request, filePath string) bool {
 // staticIndex will attempt to serve the globally defined index file
 func staticIndex(w http.ResponseWriter, r *http.Request) bool {
 	file, fileErr := os.Open(index)
+	defer file.Close()
 	stat, statErr := os.Stat(index)
 	if fileErr != nil || statErr != nil {
 		log.Println(fileErr)
