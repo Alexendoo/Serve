@@ -50,14 +50,14 @@ const (
 	</style>
 </head>
 <body>
-	{{range .}}
-		<h3>
-			<span class="local-path">{{.LocalPath}}</span><span class="req-path">{{.RequestPath}}</span>
-		</h3>
-		{{range .Entries}}
-			<a class="entry{{if .IsDir}} dir{{end}}" href="{{.Link}}">{{.Name}}{{if .IsDir}}/{{end}}</a>
-		{{end}}
+{{range .}}
+	<h3>
+		<span class="local-path">{{.LocalPath}}</span><span class="req-path">{{.RequestPath}}</span>
+	</h3>
+	{{range .Entries}}
+		<a class="entry" href="{{.Link}}">{{.Name}}</a>
 	{{end}}
+{{end}}
 </body>
 `
 	usage = `
@@ -145,13 +145,13 @@ func makeHandler(dirs []string) http.HandlerFunc {
 			log.Printf("invalid path: %s", r.URL.Path)
 			return
 		}
+		if tryDirs(w, r, dirs) {
+			return
+		}
 		if tryFiles(w, r, dirs) {
 			return
 		}
 		if len(index) > 0 && staticIndex(w, r) {
-			return
-		}
-		if !noList && tryDirs(w, r, dirs) {
 			return
 		}
 		http.NotFound(w, r)
@@ -223,13 +223,17 @@ func staticIndex(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-type dirList struct {
+// DirList is the contents of a directory at the path given by joining
+// LocalPath and RequestPath
+type DirList struct {
 	LocalPath   string
 	RequestPath string
-	Entries     []entry
+	Entries     []Entry
 }
 
-type entry struct {
+// Entry contains the details of a single file/directory for rendering in
+// htmlTmpl
+type Entry struct {
 	Name  string
 	Link  string
 	IsDir bool
@@ -238,8 +242,8 @@ type entry struct {
 // tryDirs will generate directory listings for any available directories,
 // providing multiple in the case that there are several matching directories
 //
-// Example: `serve dir1 dir2` would list directory entries dir1 containing file1,
-// and dir2 containing file2 and file3
+// Example: `serve dir1 dir2` would list directory entries dir1 containing
+// file1, and dir2 containing file2 and file3
 // .
 // ├── dir1
 // │   └── file1
@@ -247,35 +251,22 @@ type entry struct {
 //     ├── file2
 //     └── file3
 func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
-	dirLists := []dirList{}
-	found := false
+	if noList || !strings.HasSuffix(r.URL.Path, "/") {
+		return false
+	}
+
+	dirLists := []DirList{}
 	for _, dir := range dirs {
-		dirPath := filepath.Join(dir, r.URL.Path)
-		dirInfo, err := ioutil.ReadDir(dirPath)
-		if err != nil {
+		list := getDirList(dir, r)
+
+		if list == nil {
 			continue
 		}
-		entries := []entry{
-			{
-				Name:  "..",
-				Link:  path.Join(r.URL.Path, ".."),
-				IsDir: true,
-			},
-		}
-		for _, file := range dirInfo {
-			entries = append(entries, entry{
-				Name:  file.Name(),
-				Link:  path.Join(r.URL.Path, file.Name()),
-				IsDir: file.IsDir(),
-			})
-		}
-		dirLists = append(dirLists, dirList{
-			LocalPath:   dir,
-			RequestPath: r.URL.Path,
-			Entries:     entries,
-		})
-		found = true
+
+		dirLists = append(dirLists, *list)
 	}
+
+	found := len(dirLists) > 0
 	if found {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		logDirLists(r, dirLists)
@@ -284,7 +275,47 @@ func tryDirs(w http.ResponseWriter, r *http.Request, dirs []string) bool {
 	return found
 }
 
-func logDirLists(r *http.Request, dirLists []dirList) {
+func getDirList(dir string, r *http.Request) *DirList {
+	dirPath := filepath.Join(dir, r.URL.Path)
+	dirInfo, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return nil
+	}
+
+	entries := []Entry{}
+
+	// Parent directory
+	if r.URL.Path != "/" {
+		entries = append(entries, Entry{
+			Name:  "../",
+			Link:  "../",
+			IsDir: true,
+		})
+	}
+
+	for _, file := range dirInfo {
+		entry := Entry{
+			IsDir: file.IsDir(),
+			Name:  file.Name(),
+			Link:  path.Join(r.URL.Path, file.Name()),
+		}
+
+		if entry.IsDir {
+			entry.Name += "/"
+			entry.Link += "/"
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return &DirList{
+		LocalPath:   filepath.ToSlash(dir),
+		RequestPath: r.URL.Path,
+		Entries:     entries,
+	}
+}
+
+func logDirLists(r *http.Request, dirLists []DirList) {
 	if !verbose {
 		return
 	}
